@@ -31,7 +31,14 @@ class DistilBert():
         self.model = ModelClass(n_classes = n_classes, model_name=self.model_name, multilabel_or_multiclass = multilabel_or_multiclass)
         self.model.to(self.device)
         self.optimizer = torch.optim.Adam(params = self.model.parameters(), lr=LEARNING_RATE)
-        self.loss = nn.BCELoss()
+        if self.multilabel_or_multiclass == "multilabel":
+            self.loss = nn.BCELoss()
+            self.collate_fn = collate_fn_multilabel
+        elif self.multilabel_or_multiclass == "multiclass":
+            self.loss = nn.CrossEntropyLoss()
+            self.collate_fn = collate_fn_multiclass
+        else:
+            print("ERROR ....Wrong Task......")
 
     def fit(self, texts, labels, val_texts=None, val_labels=None):
         training_set = dataset(texts, labels, tokenizer=self.model.tokenizer, max_len=self.MAX_LEN)
@@ -39,7 +46,7 @@ class DistilBert():
             "batch_size" : self.TRAIN_BATCH_SIZE,
             "shuffle" : True,
             "num_workers" : 0,
-            "collate_fn" : collate_fn
+            "collate_fn" : self.collate_fn
         }
         training_loader = DataLoader(training_set, **train_params)
 
@@ -50,7 +57,7 @@ class DistilBert():
                 "batch_size" : self.VALID_BATCH_SIZE,
                 "shuffle" : False,
                 "num_workers" : 0,
-                "collate_fn" : collate_fn 
+                "collate_fn" : self.collate_fn 
             }
             val_loader = DataLoader(val_set, **val_params)
 
@@ -65,7 +72,7 @@ class DistilBert():
             ids = batch['input_ids'].to(self.device)
             masks = batch['attention_mask'].to(self.device)
             labels = labels.to(self.device)
-
+            print(labels)
             output = self.model(input_ids = ids, attention_mask = masks)
             loss_val = self.loss(output, labels)
 
@@ -100,7 +107,7 @@ class DistilBert():
             "batch_size" : self.VALID_BATCH_SIZE,
             "shuffle" : False,
             "num_workers" : 0,
-            "collate_fn" : collate_fn 
+            "collate_fn" : self.collate_fn 
         }
         prediction_loader = DataLoader(prediction_set, **prediction_params)
 
@@ -108,8 +115,11 @@ class DistilBert():
         for i, batch in enumerate(prediction_loader):
             pred_ids = batch['input_ids'].to(self.device)
             pred_masks = batch['attention_mask'].to(self.device)
-            probabilities = self.model(pred_ids, pred_masks).cpu().detach().numpy()
-            probs.append(probabilities[0])
+            probabilities = nn.functional.softmax(self.model(pred_ids, pred_masks), dim=1).cpu().detach().numpy()
+            if self.multilabel_or_multiclass == "multilabel":
+                probs.append(probabilities[0])
+            elif self.multilabel_or_multiclass == "multiclass":
+                probs.append(probabilities[0])
 
         return np.array(probs)
 
@@ -133,11 +143,11 @@ class ModelClass(nn.Module):
         if self.multilabel_or_multiclass == "multilabel":
             layer_2 = torch.sigmoid(self.final_layer(layer_1))
         else:
-            layer_2 = torch.nn.functional.softmax(self.final_layer(layer_1), dim=1)
+            layer_2 = self.final_layer(layer_1)
         return layer_2
 
 
-def collate_fn(batch):
+def collate_fn_multilabel(batch):
     texts = [t['text'] for t in batch]
     labels = [t['label'] for t in batch]
     batch = tokenizer_global.batch_encode_plus(texts, add_special_tokens=True, pad_to_max_length=True, return_tensors='pt')
@@ -146,6 +156,14 @@ def collate_fn(batch):
         return batch, labels
     return batch
 
+def collate_fn_multiclass(batch):
+    texts = [t['text'] for t in batch]
+    labels = [t['label'] for t in batch]
+    batch = tokenizer_global.batch_encode_plus(texts, add_special_tokens=True, pad_to_max_length=True, return_tensors='pt')
+    if labels[0] is not None:
+        labels = torch.LongTensor(labels)
+        return batch, labels
+    return batch
 
 class dataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_len):
