@@ -15,7 +15,7 @@ class DistilBert():
                  TRAIN_BATCH_SIZE = 8,
                  VALID_BATCH_SIZE = 8,
                  EPOCHS = 1,
-                 LEARNING_RATE = 1e-04
+                 LEARNING_RATE = 3e-05
                  ):
         self.device = 'cuda' if cuda.is_available() else 'cpu'
         self.MAX_LEN = 512
