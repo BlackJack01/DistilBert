@@ -72,7 +72,6 @@ class DistilBert():
             ids = batch['input_ids'].to(self.device)
             masks = batch['attention_mask'].to(self.device)
             labels = labels.to(self.device)
-            print(labels)
             output = self.model(input_ids = ids, attention_mask = masks)
             loss_val = self.loss(output, labels)
 
